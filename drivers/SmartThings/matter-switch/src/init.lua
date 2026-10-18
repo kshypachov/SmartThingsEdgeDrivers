@@ -56,6 +56,8 @@ function SwitchLifecycleHandlers.do_configure(driver, device)
     device_cfg.match_profile(driver, device)
   elseif device.network_type == device_lib.NETWORK_TYPE_CHILD then
     device_cfg.match_child_profile(driver, device)
+    -- Atios fork: the Video Doorbell child gets its supportedButtonValues via the parent.
+    require("sub_drivers.camera.camera_utils.device_configuration").configure_doorbell_child(device)
     -- because get_parent_device() may cause race conditions if used in init, an initial child subscribe is handled in doConfigure.
     -- all future calls to subscribe will be handled by the parent device in init
     device:subscribe()

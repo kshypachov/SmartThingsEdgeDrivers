@@ -128,6 +128,9 @@ deviceConfig:
     - component: main
       capability: webrtc
       version: 1
+    - component: doorbell
+      capability: button
+      version: 1
     - component: main
       capability: mechanicalPanTiltZoom
       version: 1
@@ -141,6 +144,9 @@ deviceConfig:
     conditions:
     - component: main
       capability: motionSensor
+      version: 1
+    - component: doorbell
+      capability: button
       version: 1
     actions:
     - component: main

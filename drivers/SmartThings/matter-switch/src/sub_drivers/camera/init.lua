@@ -21,11 +21,16 @@ local CameraLifecycleHandlers = {}
 function CameraLifecycleHandlers.device_init(driver, device)
   device:set_component_to_endpoint_fn(camera_utils.component_to_endpoint)
   device:set_endpoint_to_component_fn(switch_utils.endpoint_to_component)
-  device:extend_device("emit_event_for_endpoint", switch_utils.emit_event_for_endpoint)
+  device:extend_device("emit_event_for_endpoint", camera_utils.emit_event_for_endpoint)
   if device:get_field(fields.IS_PARENT_CHILD_DEVICE) then
     device:set_find_child(switch_utils.find_child)
   end
   device:extend_device("subscribe", camera_utils.subscribe)
+  -- Atios fork: a driver update runs init, not doConfigure: move an existing Doorbell child
+  -- to the current child profile here (creation stays in doConfigure / driverSwitched).
+  if camera_fields.ATIOS_DOORBELL_CHILD then
+    camera_cfg.create_doorbell_child(driver, device, true)
+  end
   device:subscribe()
 end
 
@@ -42,6 +47,12 @@ function CameraLifecycleHandlers.driver_switched(driver, device)
   camera_utils.update_camera_component_map(device)
   if #device:get_endpoints(clusters.CameraAvStreamManagement.ID) == 0 then
     camera_cfg.match_profile(device)
+  end
+  -- Atios fork: a camera switched onto this driver gets its Doorbell child here
+  -- (doConfigure does not run on a driver switch); before PROVISIONED so the
+  -- parent/child field is set before the child's own lifecycle starts.
+  if camera_fields.ATIOS_DOORBELL_CHILD then
+    camera_cfg.create_doorbell_child(driver, device)
   end
   device:try_update_metadata({provisioning_state = "PROVISIONED"})
 end

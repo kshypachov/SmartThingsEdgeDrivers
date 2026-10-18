@@ -20,6 +20,45 @@ function CameraUtils.component_to_endpoint(device, component)
   return nil
 end
 
+-- Atios fork: deliver a capability event for an endpoint. A child device of the
+-- endpoint gets it first; for the Video Doorbell endpoint the parent's mapped component
+-- (`doorbell`) gets it as well, so the camera and the child Doorbell show the same
+-- button. Without a child the mapped component gets it, and only if that component
+-- supports the event's capability -- otherwise the event is dropped silently instead of
+-- the stock warning path.
+function CameraUtils.emit_event_for_endpoint(device, ep_info, event)
+  if type(ep_info) == "number" then
+    ep_info = { endpoint_id = ep_info }
+  end
+  local child = nil
+  if device:get_field(fields.IS_PARENT_CHILD_DEVICE) then
+    child = switch_utils.find_child(device, ep_info.endpoint_id)
+  end
+  if child ~= nil then
+    child:emit_event(event)
+    local doorbell_eps = switch_utils.get_endpoints_by_device_type(device, fields.DEVICE_TYPE_ID.DOORBELL)
+    if doorbell_eps[1] ~= ep_info.endpoint_id then
+      return
+    end
+  end
+  local comp_id = switch_utils.endpoint_to_component(device, ep_info)
+  if device:supports_capability_by_id(event.capability.ID, comp_id) then
+    local comp = device.profile.components[comp_id]
+    if comp ~= nil then
+      device:emit_component_event(comp, event)
+    end
+  end
+  -- Atios fork: the video-doorbell profile also carries `button` on main (the camera
+  -- plugin's "notify when doorbell is pressed" looks for the device's button); the
+  -- doorbell endpoint's events are mirrored there.
+  if comp_id ~= "main" and device:supports_capability_by_id(event.capability.ID, "main") then
+    local doorbell_eps = switch_utils.get_endpoints_by_device_type(device, fields.DEVICE_TYPE_ID.DOORBELL)
+    if doorbell_eps[1] == ep_info.endpoint_id and device.profile.components.main ~= nil then
+      device:emit_component_event(device.profile.components.main, event)
+    end
+  end
+end
+
 function CameraUtils.update_camera_component_map(device)
   local camera_av_ep_ids = device:get_endpoints(clusters.CameraAvStreamManagement.ID)
   if #camera_av_ep_ids > 0 then

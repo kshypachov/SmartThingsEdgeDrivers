@@ -274,6 +274,7 @@ local function test_init()
     parent_device_id = mock_device.id,
     parent_assigned_child_key = string.format("%d", FLOODLIGHT_EP)
   })
+  -- Atios fork: no separate Doorbell child (ATIOS_DOORBELL_CHILD = false); the button is on main.
   subscribe_request = subscribed_attributes[1]:subscribe(mock_device)
   subscribe_request:merge(cluster_base.subscribe(mock_device, nil, camera_fields.CameraAVSMFeatureMapAttr.cluster, camera_fields.CameraAVSMFeatureMapAttr.ID))
   subscribe_request:merge(cluster_base.subscribe(mock_device, nil, camera_fields.CameraAVSULMFeatureMapAttr.cluster, camera_fields.CameraAVSULMFeatureMapAttr.ID))
@@ -448,6 +449,7 @@ local expected_metadata = {
         "webrtc",
         "motionSensor",
         "sounds",
+        "button", -- Atios fork: doorbell button mirrored on main (video-doorbell profile)
       }
     },
     {
@@ -478,7 +480,7 @@ local expected_metadata = {
       }
     }
   },
-  profile = "camera"
+  profile = "video-doorbell"
 }
 
 local function update_device_profile()
@@ -494,7 +496,7 @@ local function update_device_profile()
   test.socket.matter:__expect_send({mock_device.id, clusters.Switch.attributes.MultiPressMax:read(mock_device, DOORBELL_EP)})
   test.wait_for_events()
   local updated_device_profile = t_utils.get_profile_definition(
-    "camera.yml", {enabled_optional_capabilities = expected_metadata.optional_component_capabilities}
+    "video-doorbell.yml", {enabled_optional_capabilities = expected_metadata.optional_component_capabilities}
   )
   test.wait_for_events()
   test.socket.device_lifecycle:__queue_receive(mock_device:generate_info_changed({ profile = updated_device_profile }))
@@ -745,7 +747,8 @@ test.register_coroutine_test(
             "zoneManagement",
             "webrtc",
             "motionSensor",
-            "sounds"
+            "sounds",
+            "button"
           }
         },
         {
@@ -769,7 +772,7 @@ test.register_coroutine_test(
           }
         }
       },
-      profile = "camera"
+      profile = "video-doorbell"
     })
 
     test.socket.matter:__expect_send({mock_device.id, clusters.Switch.attributes.MultiPressMax:read(mock_device, DOORBELL_EP)})
@@ -1147,7 +1150,7 @@ test.register_coroutine_test(
         { "main",
           { "videoCapture2", "cameraViewportSettings", "videoStreamSettings", "localMediaStorage", "audioRecording",
             "cameraPrivacyMode", "imageControl", "hdr", "nightVision", "mechanicalPanTiltZoom", "zoneManagement",
-            "webrtc", "motionSensor", "sounds" }
+            "webrtc", "motionSensor", "sounds", "button" }
         },
         { "statusLed",
           { "switch", "mode" }
@@ -1162,7 +1165,7 @@ test.register_coroutine_test(
           { "button" }
         }
       },
-      profile = "camera"
+      profile = "video-doorbell"
     }
     mock_device:expect_metadata_update(updated_expected_metadata)
     test.socket.matter:__expect_send({mock_device.id, clusters.Switch.attributes.MultiPressMax:read(mock_device, DOORBELL_EP)})
@@ -1189,21 +1192,21 @@ test.register_coroutine_test(
         { "main",
           { "videoCapture2", "cameraViewportSettings", "videoStreamSettings", "localMediaStorage", "audioRecording",
             "cameraPrivacyMode", "imageControl", "hdr", "nightVision", "mechanicalPanTiltZoom", "zoneManagement",
-            "webrtc", "motionSensor", "sounds" }
+            "webrtc", "motionSensor", "sounds", "button" }
         },
         { "statusLed", { "switch", "mode" } },
         { "speaker", { "audioMute" } },
         { "microphone", { "audioMute" } },
         { "doorbell", { "button" } }
       },
-      profile = "camera"
+      profile = "video-doorbell"
     }
     mock_device:expect_metadata_update(first_pass_metadata)
     test.socket.matter:__expect_send({mock_device.id, clusters.Switch.attributes.MultiPressMax:read(mock_device, DOORBELL_EP)})
     test.wait_for_events()
 
     local first_pass_profile = t_utils.get_profile_definition(
-      "camera.yml", {enabled_optional_capabilities = first_pass_metadata.optional_component_capabilities}
+      "video-doorbell.yml", {enabled_optional_capabilities = first_pass_metadata.optional_component_capabilities}
     )
     test.wait_for_events()
     test.socket.device_lifecycle:__queue_receive(mock_device:generate_info_changed({ profile = first_pass_profile }))
@@ -1602,14 +1605,14 @@ test.register_coroutine_test(
         { "main",
           { "videoCapture2", "cameraViewportSettings", "videoStreamSettings", "localMediaStorage", "audioRecording",
             "cameraPrivacyMode", "imageControl", "hdr", "nightVision", "mechanicalPanTiltZoom", "zoneManagement",
-            "webrtc", "motionSensor", "sounds" }
+            "webrtc", "motionSensor", "sounds", "button" }
         },
         { "statusLed", { "switch", "mode" } },
         { "speaker", { "audioMute" } }, -- audioVolume dropped: the range is now zero-width (100 == 100)
         { "microphone", { "audioMute", "audioVolume" } },
         { "doorbell", { "button" } }
       },
-      profile = "camera"
+      profile = "video-doorbell"
     }
     mock_device:expect_metadata_update(updated_expected_metadata)
     test.socket.matter:__expect_send({mock_device.id, clusters.Switch.attributes.MultiPressMax:read(mock_device, DOORBELL_EP)})
@@ -2253,6 +2256,10 @@ test.register_coroutine_test(
     })
     test.socket.capability:__expect_send(
       mock_device:generate_test_message("doorbell", capabilities.button.button.double({state_change = true}))
+    )
+    -- Atios fork: mirrored on main (video-doorbell profile)
+    test.socket.capability:__expect_send(
+      mock_device:generate_test_message("main", capabilities.button.button.double({state_change = true}))
     )
   end,
   {
@@ -3899,7 +3906,7 @@ test.register_coroutine_test(
         { "main",
           { "videoCapture2", "cameraViewportSettings", "videoStreamSettings", "localMediaStorage", "audioRecording",
             "cameraPrivacyMode", "imageControl", "hdr", "nightVision", "mechanicalPanTiltZoom", "zoneManagement",
-            "webrtc", "motionSensor", "sounds", }
+            "webrtc", "motionSensor", "sounds", "button", }
         },
         { "statusLed",
           { "switch" } -- only switch capability remains
@@ -3914,7 +3921,7 @@ test.register_coroutine_test(
           { "button" }
         }
       },
-      profile = "camera"
+      profile = "video-doorbell"
     }
     mock_device:expect_metadata_update(updated_expected_metadata)
     test.socket.matter:__expect_send({mock_device.id, clusters.Switch.attributes.MultiPressMax:read(mock_device, DOORBELL_EP)})

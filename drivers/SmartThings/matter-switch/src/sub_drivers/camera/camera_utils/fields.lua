@@ -5,6 +5,15 @@ local clusters = require "st.matter.clusters"
 
 local CameraFields = {}
 
+-- Atios fork: a node with a Video Doorbell (0x0143) endpoint gets the `video-doorbell`
+-- profile (camera profile with the DoorBell category) instead of `camera`. false = stock.
+CameraFields.ATIOS_VIDEO_DOORBELL_PROFILE = true
+CameraFields.ATIOS_PROFILE_NAME = "__atios_profile_name"
+-- Atios fork: separate child "Doorbell" device for the button. Off since 2026-10-10: the
+-- video-doorbell profile carries the button on main, which also enables the camera
+-- plugin's "Notify When Doorbell is pressed"; the child only duplicated it.
+CameraFields.ATIOS_DOORBELL_CHILD = false
+
 CameraFields.MAX_ENCODED_PIXEL_RATE = "__max_encoded_pixel_rate"
 CameraFields.MAX_FRAMES_PER_SECOND = "__max_frames_per_second"
 CameraFields.MAX_VOLUME_LEVEL = "__max_volume_level"

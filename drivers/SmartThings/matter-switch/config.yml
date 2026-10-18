@@ -1,6 +1,6 @@
-name: 'Matter Switch'
-packageKey: 'matter-switch'
+name: 'Matter Switch (Atios doorbell)'
+packageKey: 'matter-switch-atios-doorbell'
 permissions:
   matter: {}
-description: "SmartThings driver for Matter switch devices"
+description: "SmartThings matter-switch (upstream 43f47501) + Video Doorbell button: doorbell button in the camera presentation and a child Doorbell button device"
 vendorSupportInformation: "https://support.smartthings.com"

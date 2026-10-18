@@ -204,6 +204,64 @@ local function capabilities_needing_reinit(device)
   return capabilities_to_reinit
 end
 
+-- Atios fork: the button of a Matter Video Doorbell (the first endpoint with device type
+-- 0x0143, the same endpoint the `doorbell` component is mapped to) also becomes an
+-- EDGE_CHILD device with the stock `button` profile, whose auto-generated presentation
+-- shows the button on its own card and offers it as a Routine condition.
+local DOORBELL_CHILD_REQUESTED = "__atios_doorbell_child_requested"
+local DOORBELL_CHILD_PROFILE = "__atios_doorbell_child_profile"
+
+function CameraDeviceConfiguration.create_doorbell_child(driver, device, migrate_only)
+  local doorbell_eps = switch_utils.get_endpoints_by_device_type(device, fields.DEVICE_TYPE_ID.DOORBELL)
+  if #doorbell_eps == 0 then
+    return false
+  end
+  local key = string.format("%d", doorbell_eps[1])
+  if not migrate_only and device:get_child_by_parent_assigned_key(key) == nil and not device:get_field(DOORBELL_CHILD_REQUESTED) then
+    driver:try_create_device(
+      {
+        type = "EDGE_CHILD",
+        label = "Doorbell",
+        profile = "doorbell-button",
+        parent_device_id = device.id,
+        parent_assigned_child_key = key,
+        vendor_provided_label = "Doorbell"
+      }
+    )
+    device:set_field(DOORBELL_CHILD_REQUESTED, true, {persist = false})
+  end
+  local child = device:get_child_by_parent_assigned_key(key)
+  if migrate_only and child == nil then
+    return false
+  end
+  if child ~= nil and child:get_field(DOORBELL_CHILD_PROFILE) ~= "doorbell-button" then
+    child:try_update_metadata({profile = "doorbell-button"})
+    child:set_field(DOORBELL_CHILD_PROFILE, "doorbell-button", {persist = true})
+  end
+  device:set_field(fields.IS_PARENT_CHILD_DEVICE, true, {persist = true})
+  device:set_find_child(switch_utils.find_child)
+  return true
+end
+
+-- Atios fork: called from the child's doConfigure. MultiPressMax is read only by
+-- configure_buttons and is not subscribed, so a camera switched onto this driver would
+-- leave the new Doorbell child without supportedButtonValues; re-running it here makes
+-- the MultiPressMax reply arrive while the child exists. Returns true when handled.
+function CameraDeviceConfiguration.configure_doorbell_child(child, configure_fn)
+  local parent = child:get_parent_device()
+  if parent == nil then
+    return false
+  end
+  local doorbell_eps = switch_utils.get_endpoints_by_device_type(parent, fields.DEVICE_TYPE_ID.DOORBELL)
+  if #doorbell_eps == 0 or string.format("%d", doorbell_eps[1]) ~= child.parent_assigned_child_key then
+    return false
+  end
+  -- configure_fn: injectable for tests (the test framework reloads modules per test).
+  ;(configure_fn or button_cfg.configure_buttons)(parent,
+    parent:get_endpoints(clusters.Switch.ID, {feature_bitmap = clusters.Switch.types.SwitchFeature.MOMENTARY_SWITCH}))
+  return true
+end
+
 function CameraDeviceConfiguration.create_child_devices(driver, device)
   local num_floodlight_eps = 0
   local parent_child_device = false
@@ -230,6 +288,9 @@ function CameraDeviceConfiguration.create_child_devices(driver, device)
   if parent_child_device then
     device:set_field(fields.IS_PARENT_CHILD_DEVICE, true, {persist = true})
     device:set_find_child(switch_utils.find_child)
+  end
+  if camera_fields.ATIOS_DOORBELL_CHILD then
+    CameraDeviceConfiguration.create_doorbell_child(driver, device)
   end
 end
 
@@ -344,9 +405,33 @@ function CameraDeviceConfiguration.match_profile(device)
     table.insert(optional_supported_component_capabilities, {camera_fields.profile_components.doorbell, doorbell_component_capabilities})
   end
 
-  if camera_utils.optional_capabilities_list_changed(optional_supported_component_capabilities, device.profile.components) then
+  -- Atios fork: the profile name follows the doorbell endpoint; a name change is forced
+  -- once (persisted field), since the capability comparison alone would not see it.
+  local profile_name = "camera"
+  if #doorbell_endpoints > 0 and camera_fields.ATIOS_VIDEO_DOORBELL_PROFILE then
+    profile_name = "video-doorbell"
+    -- the doorbell button on main as well (optional in the profile, so the capability
+    -- comparison below stays stable and the profile is not re-sent on every report)
+    table.insert(optional_supported_component_capabilities[1][2], capabilities.button.ID)
+  end
+  local profile_name_changed = false
+  if profile_name ~= "camera" then
+    -- The current profile's main category tells whether the switch already happened;
+    -- the persisted field is the fallback when the profile carries no categories.
+    local main = device.profile and device.profile.components and device.profile.components.main
+    local category = main and main.categories and main.categories[1] and main.categories[1].name
+    if category ~= nil then
+      profile_name_changed = category ~= "DoorBell"
+    else
+      profile_name_changed = device:get_field(camera_fields.ATIOS_PROFILE_NAME) ~= profile_name
+    end
+  end
+  if profile_name_changed or camera_utils.optional_capabilities_list_changed(optional_supported_component_capabilities, device.profile.components) then
     profile_update_requested = true
-    device:try_update_metadata({profile = "camera", optional_component_capabilities = optional_supported_component_capabilities})
+    device:try_update_metadata({profile = profile_name, optional_component_capabilities = optional_supported_component_capabilities})
+    if profile_name ~= "camera" then -- stock path stays untouched
+      device:set_field(camera_fields.ATIOS_PROFILE_NAME, profile_name, {persist = true})
+    end
     if #doorbell_endpoints > 0 then
       CameraDeviceConfiguration.update_doorbell_component_map(device, doorbell_endpoints[1])
       button_cfg.configure_buttons(device, device:get_endpoints(clusters.Switch.ID, {feature_bitmap=clusters.Switch.types.SwitchFeature.MOMENTARY_SWITCH}))
